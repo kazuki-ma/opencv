@@ -124,8 +124,8 @@ template<typename _Tp> static void splineBuild(const _Tp* f, int n, _Tp* tab)
 // interpolates value of a function at x, 0 <= x <= n using a cubic spline.
 template<typename _Tp> static inline _Tp splineInterpolate(_Tp x, const _Tp* tab, int n)
 {
-    int ix = cvFloor(x);
-    ix = std::min(std::max(ix, 0), n-1);
+    // don't touch this function without urgent need - some versions of gcc fail to inline it correctly
+    int ix = std::min(std::max(int(x), 0), n-1);
     x -= ix;
     tab += ix*4;
     return ((tab[3]*x + tab[2])*x + tab[1])*x + tab[0];
@@ -157,46 +157,37 @@ template<> struct ColorChannel<float>
 ///////////////////////////// Top-level template function ////////////////////////////////
 
 template <typename Cvt>
-class CvtColorLoop_Invoker : 
-    public ParallelLoopBody
+class CvtColorLoop_Invoker : public ParallelLoopBody
 {
     typedef typename Cvt::channel_type _Tp;
 public:
-    
+
     CvtColorLoop_Invoker(const Mat& _src, Mat& _dst, const Cvt& _cvt) :
         ParallelLoopBody(), src(_src), dst(_dst), cvt(_cvt)
     {
     }
-    
+
     virtual void operator()(const Range& range) const
     {
-        int i = range.start;
-        const uchar* yS = src.data + src.step * i;
-        uchar* yD = dst.data + dst.step * i;
+        const uchar* yS = src.ptr<uchar>(range.start);
+        uchar* yD = dst.ptr<uchar>(range.start);
 
-        for ( ; i < range.end; ++i, yS += src.step, yD += dst.step )
+        for( int i = range.start; i < range.end; ++i, yS += src.step, yD += dst.step )
             cvt((const _Tp*)yS, (_Tp*)yD, src.cols);
     }
-    
+
 private:
-    const Mat src;
-    Mat dst;
-    const Cvt cvt;
-    
-    CvtColorLoop_Invoker(const CvtColorLoop_Invoker&);
+    const Mat& src;
+    Mat& dst;
+    const Cvt& cvt;
+
     const CvtColorLoop_Invoker& operator= (const CvtColorLoop_Invoker&);
 };
 
-template <typename Cvt> 
+template <typename Cvt>
 void CvtColorLoop(const Mat& src, Mat& dst, const Cvt& cvt)
 {
-    Range range(0, src.rows);
-    CvtColorLoop_Invoker<Cvt> invoker(src, dst, cvt);
-#if defined(_MSC_VER) || defined(__APPLE__)
-    parallel_for_(range, invoker);
-#else
-    invoker(range);
-#endif
+    parallel_for_(Range(0, src.rows), CvtColorLoop_Invoker<Cvt>(src, dst, cvt), src.total()/(double)(1<<16) );
 }
 
 ////////////////// Various 3/4-channel to 3/4-channel RGB transformations /////////////////
@@ -2172,7 +2163,7 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
     bool haveSSE = cv::checkHardwareSupport(CV_CPU_SSE2);
     #define _mm_absdiff_epu16(a,b) _mm_adds_epu16(_mm_subs_epu16(a, b), _mm_subs_epu16(b, a))
 #endif
-    
+
     for( int y = 2; y < size.height - 4; y++ )
     {
         uchar* dstrow = dst + dststep*y + 6;
@@ -2290,7 +2281,7 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
 
                     minGrad = std::min(std::min(std::min(std::min(minGrad, gradNE), gradSW), gradNW), gradSE);
                     maxGrad = std::max(std::max(std::max(std::max(maxGrad, gradNE), gradSW), gradNW), gradSE);
-                    int T = minGrad + maxGrad/2;
+                    int T = minGrad + MAX(maxGrad/2, 1);
 
                     int Rs = 0, Gs = 0, Bs = 0, ng = 0;
                     if( gradN < T )
@@ -2362,7 +2353,7 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
 
                     minGrad = std::min(std::min(std::min(std::min(minGrad, gradNE), gradSW), gradNW), gradSE);
                     maxGrad = std::max(std::max(std::max(std::max(maxGrad, gradNE), gradSW), gradNW), gradSE);
-                    int T = minGrad + maxGrad/2;
+                    int T = minGrad + MAX(maxGrad/2, 1);
 
                     int Rs = 0, Gs = 0, Bs = 0, ng = 0;
                     if( gradN < T )
@@ -2437,8 +2428,8 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
 
             __m128i emask    = _mm_set1_epi32(0x0000ffff),
                     omask    = _mm_set1_epi32(0xffff0000),
-                    smask    = _mm_set1_epi16(0x7fff), // Get rid of sign bit in u16's
-                    z        = _mm_setzero_si128();
+                    z        = _mm_setzero_si128(),
+                    one      = _mm_set1_epi16(1);
             __m128 _0_5      = _mm_set1_ps(0.5f);
 
             #define _mm_merge_epi16(a, b) _mm_or_si128(_mm_and_si128(a, emask), _mm_and_si128(b, omask)) //(aA_aA_aA_aA) * (bB_bB_bB_bB) => (bA_bA_bA_bA)
@@ -2503,7 +2494,7 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
                 maxGrad = _mm_max_epi16(_mm_max_epi16(maxGrad, gradNW), gradSE);
 
                 //int T = minGrad + maxGrad/2;
-                __m128i T = _mm_adds_epi16(_mm_srli_epi16(maxGrad, 1), minGrad);
+                __m128i T = _mm_adds_epi16(_mm_max_epi16(_mm_srli_epi16(maxGrad, 1), one), minGrad);
 
                 __m128i RGs = z, GRs = z, Bs = z, ng = z;
 
@@ -2639,13 +2630,12 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
                 // Bs  += {srow[-bstep-1]*2; (srow[-bstep]+srow[-bstep-2])} * (T>gradNW)
                 Bs  = _mm_adds_epi16(Bs, _mm_and_si128(_mm_merge_epi16(_mm_slli_epi16(x5, 1),_mm_adds_epi16(x3,x16)), mask));
 
-                __m128 ngf0, ngf1;
-                ngf0 = _mm_div_ps(_0_5, _mm_cvtloepi16_ps(ng));
-                ngf1 = _mm_div_ps(_0_5, _mm_cvthiepi16_ps(ng));
+                __m128 ngf0 = _mm_div_ps(_0_5, _mm_cvtloepi16_ps(ng));
+                __m128 ngf1 = _mm_div_ps(_0_5, _mm_cvthiepi16_ps(ng));
 
                 // now interpolate r, g & b
-                t0 = _mm_sub_epi16(GRs, RGs);
-                t1 = _mm_sub_epi16(Bs, RGs);
+                t0 = _mm_subs_epi16(GRs, RGs);
+                t1 = _mm_subs_epi16(Bs, RGs);
 
                 t0 = _mm_add_epi16(x0, _mm_packs_epi32(
                                                        _mm_cvtps_epi32(_mm_mul_ps(_mm_cvtloepi16_ps(t0), ngf0)),
@@ -2659,11 +2649,6 @@ static void Bayer2RGB_VNG_8u( const Mat& srcmat, Mat& dstmat, int code )
                 x2 = _mm_merge_epi16(t0, x0);
 
                 uchar R[8], G[8], B[8];
-                
-                // Make sure there is no sign bit in the 16 bit values so they can saturate correctly
-                x1 = _mm_and_si128(x1, smask);
-                x2 = _mm_and_si128(x2, smask);
-                t1 = _mm_and_si128(t1, smask);
 
                 _mm_storel_epi64(blueIdx ? (__m128i*)B : (__m128i*)R, _mm_packus_epi16(x1, z));
                 _mm_storel_epi64((__m128i*)G, _mm_packus_epi16(x2, z));
@@ -3180,7 +3165,7 @@ struct RGBA2mRGBA
             _Tp v1 = *src++;
             _Tp v2 = *src++;
             _Tp v3 = *src++;
-            
+
             *dst++ = (v0 * v3 + half_val) / max_val;
             *dst++ = (v1 * v3 + half_val) / max_val;
             *dst++ = (v2 * v3 + half_val) / max_val;
@@ -3205,7 +3190,7 @@ struct mRGBA2RGBA
             _Tp v2 = *src++;
             _Tp v3 = *src++;
             _Tp v3_half = v3 / 2;
-            
+
             *dst++ = (v3==0)? 0 : (v0 * max_val + v3_half) / v3;
             *dst++ = (v3==0)? 0 : (v1 * max_val + v3_half) / v3;
             *dst++ = (v3==0)? 0 : (v2 * max_val + v3_half) / v3;
@@ -3568,7 +3553,7 @@ void cv::cvtColor( InputArray _src, OutputArray _dst, int code, int dcn )
         case CV_BayerBG2BGR: case CV_BayerGB2BGR: case CV_BayerRG2BGR: case CV_BayerGR2BGR:
         case CV_BayerBG2BGR_VNG: case CV_BayerGB2BGR_VNG: case CV_BayerRG2BGR_VNG: case CV_BayerGR2BGR_VNG:
             {
-                if (dcn <= 0) 
+                if (dcn <= 0)
                     dcn = 3;
                 CV_Assert( scn == 1 && dcn == 3 );
 

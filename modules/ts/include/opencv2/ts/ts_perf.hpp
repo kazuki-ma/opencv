@@ -49,6 +49,8 @@ const cv::Size sz1440p = szWQHD;
 const cv::Size sz2160p = cv::Size(3840, 2160);//UHDTV1 4K
 const cv::Size sz4320p = cv::Size(7680, 4320);//UHDTV2 8K
 
+const cv::Size sz3MP = cv::Size(2048, 1536);
+const cv::Size sz5MP = cv::Size(2592, 1944);
 const cv::Size sz2K = cv::Size(2048, 2048);
 
 const cv::Size szODD = cv::Size(127, 61);
@@ -187,6 +189,7 @@ private:
     cv::FileStorage storageOut;
     cv::FileNode rootIn;
     std::string currentTestNodeName;
+    std::string suiteName;
 
     cv::FileStorage& write();
 
@@ -510,7 +513,25 @@ struct CV_EXPORTS RectLess_
 
 typedef RectLess_<int> RectLess;
 
+struct CV_EXPORTS KeypointGreater
+{
+    bool operator()(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2) const
+    {
+        if(kp1.response > kp2.response) return true;
+        if(kp1.response < kp2.response) return false;
+        if(kp1.size > kp2.size) return true;
+        if(kp1.size < kp2.size) return false;
+        if(kp1.octave > kp2.octave) return true;
+        if(kp1.octave < kp2.octave) return false;
+        if(kp1.pt.y < kp2.pt.y) return false;
+        if(kp1.pt.y > kp2.pt.y) return true;
+        return kp1.pt.x < kp2.pt.x;
+    }
+};
+
 } //namespace comparators
+
+void CV_EXPORTS sort(std::vector<cv::KeyPoint>& pts, cv::InputOutputArray descriptors);
 } //namespace perf
 
 #endif //__OPENCV_TS_PERF_HPP__
