@@ -65,7 +65,7 @@ class Labeling{
 
 			image_size_t size() const {return (col_max - col_min + 1);}
 
-			inline bool isRoot() const{ return (&*this == &*parent);}
+			inline bool isRoot() const{return (&*this == &*parent);}
 
 			inline LineElementIterator findRoot() {
 				if (this->isRoot()) {
@@ -251,24 +251,15 @@ class Labeling{
 			bool back_is_root = back->isRoot();
 
 			if       (fore_is_root && ! back_is_root) {
-				// fore だけが孤立エレメントの時，
-				// fore の link を back の大元に書き換えて終わり
 				fore->setParent(back->findRoot());
 			}
 			else if (fore_is_root && back_is_root) {
-				// どちらも孤立エレメントならば，
-				// 上の方のエレメントが上のコストを吸収する
 				fore->setParent(back);
 			}
 			else if (back_is_root) {
-				// back だけが孤立エレメントの場合，
-				// （foreにとって二つ目以降の結合エレメントの場合）
-				// back のコストを fore で吸収する
 				back->setParent(fore->findRoot());
 			}
 			else {
-				// どちらも孤立エレメントで無い場合
-				// back 側の親で吸収する．
 				if  (fore->findRoot() == back->findRoot()) {
 					return;
 				}
