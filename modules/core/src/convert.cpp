@@ -1441,30 +1441,10 @@ void cv::Mat::convertTo(OutputArray _dst, int _type, double alpha, double beta) 
 
     Mat src = *this;
 
-    BinaryFunc func = noScale ? getConvertFunc(sdepth, ddepth) : getConvertScaleFunc(sdepth, ddepth);
-    double scale[] = {alpha, beta};
-    int cn = channels();
-    CV_Assert( func != 0 );
-
-    if( dims <= 2 )
-    {
-        _dst.create( size(), _type );
-        Mat dst = _dst.getMat();
-        Size sz = getContinuousSize(src, dst, cn);
-        func( src.data, src.step, 0, 0, dst.data, dst.step, sz, scale );
-    }
-    else
-    {
-        _dst.create( dims, size, _type );
-        Mat dst = _dst.getMat();
-        const Mat* arrays[] = {&src, &dst, 0};
-        uchar* ptrs[2];
-        NAryMatIterator it(arrays, ptrs);
-        Size sz((int)(it.size*cn), 1);
-
-        for( size_t i = 0; i < it.nplanes; i++, ++it )
-            func(ptrs[0], 1, 0, 0, ptrs[1], 1, sz, scale);
-    }
+	_dst.create(size(), _type);
+	Mat dst = _dst.getMat();
+	cv::addWeighted(src, alpha, src /* no effect */, 0, beta, dst);
+	return;
 }
 
 /****************************************************************************************\

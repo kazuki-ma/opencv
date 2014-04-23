@@ -1664,66 +1664,14 @@ static void arithm_op(InputArray _src1, InputArray _src2, OutputArray _dst,
     }
     else
     {
-        const Mat* arrays[] = { &src1, &dst, &mask, 0 };
-        uchar* ptrs[3];
+		cv::Mat src2_1line = cv::Mat(src1.row(0).size(), src1.type());
 
-        NAryMatIterator it(arrays, ptrs);
-        size_t total = it.size, blocksize = std::min(total, blocksize0);
+		src2_1line += cv::Scalar(src2.at<double>(0,0));
 
-        _buf.allocate(bufesz*blocksize + 64);
-        buf = _buf;
-        if( cvtsrc1 )
-            buf1 = buf, buf = alignPtr(buf + blocksize*wsz, 16);
-        buf2 = buf; buf = alignPtr(buf + blocksize*wsz, 16);
-        wbuf = maskbuf = buf;
-        if( cvtdst )
-            buf = alignPtr(buf + blocksize*wsz, 16);
-        if( haveMask )
-            maskbuf = buf;
+		std::vector<size_t> steps(src1.dims);
+		cv::Mat src2_temp = cv::Mat(src1.dims, src1.size, src2_1line.type(), src2_1line.data, &steps[0]);
 
-        convertAndUnrollScalar( src2, wtype, buf2, blocksize);
-
-        for( size_t i = 0; i < it.nplanes; i++, ++it )
-        {
-            for( size_t j = 0; j < total; j += blocksize )
-            {
-                int bsz = (int)MIN(total - j, blocksize);
-                Size bszn(bsz*cn, 1);
-                const uchar *sptr1 = ptrs[0];
-                const uchar* sptr2 = buf2;
-                uchar* dptr = ptrs[1];
-
-                if( cvtsrc1 )
-                {
-                    cvtsrc1( sptr1, 1, 0, 1, buf1, 1, bszn, 0 );
-                    sptr1 = buf1;
-                }
-
-                if( swapped12 )
-                    std::swap(sptr1, sptr2);
-
-                if( !haveMask && !cvtdst )
-                    func( sptr1, 1, sptr2, 1, dptr, 1, bszn, usrdata );
-                else
-                {
-                    func( sptr1, 1, sptr2, 1, wbuf, 1, bszn, usrdata );
-                    if( !haveMask )
-                        cvtdst( wbuf, 1, 0, 1, dptr, 1, bszn, 0 );
-                    else if( !cvtdst )
-                    {
-                        copymask( wbuf, 1, ptrs[2], 1, dptr, 1, Size(bsz, 1), &dsz );
-                        ptrs[2] += bsz;
-                    }
-                    else
-                    {
-                        cvtdst( wbuf, 1, 0, 1, maskbuf, 1, bszn, 0 );
-                        copymask( maskbuf, 1, ptrs[2], 1, dptr, 1, Size(bsz, 1), &dsz );
-                        ptrs[2] += bsz;
-                    }
-                }
-                ptrs[0] += bsz*esz1; ptrs[1] += bsz*dsz;
-            }
-        }
+		return arithm_op(src1, src2_temp, _dst, _mask, dtype, tab, muldiv, usrdata, oclop);
     }
 }
 
