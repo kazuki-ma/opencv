@@ -1439,12 +1439,9 @@ void cv::Mat::convertTo(OutputArray _dst, int _type, double alpha, double beta) 
         return;
     }
 
-    Mat src = *this;
-
-	_dst.create(size(), _type);
-	Mat dst = _dst.getMat();
-	cv::addWeighted(src, alpha, src /* no effect */, 0, beta, dst);
-	return;
+    _dst.create(size(), _type);
+    Mat dst = _dst.getMat();
+    cv::addWeighted(*this, alpha, *this /* no effect */, 0, beta, dst);
 }
 
 /****************************************************************************************\
